@@ -43,6 +43,7 @@ def visualization(samples, targets, pred, vis_dir, split_map=None):
 
     images = samples.tensors
     masks = samples.mask
+    img_h, img_w = samples.tensors.shape[-2:]
     for idx in range(images.shape[0]):
         sample = restore_transform(images[idx])
         sample = pil_to_tensor(sample.convert('RGB')).numpy() * 255
@@ -75,6 +76,8 @@ def visualization(samples, targets, pred, vis_dir, split_map=None):
 
             name = targets[idx]['image_path'].split('/')[-1].split('.')[0]
             cv2.imwrite(os.path.join(vis_dir, '{}_gt{}_pred{}.jpg'.format(name, len(gts[idx]), len(pred[idx]))), sample_vis)
+            img_h, img_w = sample_vis.shape[0], sample_vis.shape[1]
+    return img_h, img_w
 
 
 # training
@@ -212,6 +215,7 @@ def pred(model, data_loader, device, json_path, epoch=0, vis_dir=None):
 
     print_freq = 10
     for samples, targets in metric_logger.log_every(data_loader, print_freq, header):
+        print(dir(samples))
         samples = samples.to(device)
         img_h, img_w = samples.tensors.shape[-2:]
 
@@ -225,25 +229,44 @@ def pred(model, data_loader, device, json_path, epoch=0, vis_dir=None):
         name = os.path.basename(path_temp)
         img_name = name.split(".")[0]
 
+        # points = [[point[0] * img_h, point[1] * img_w] for point in outputs_points]
+        # # points = points.cpu().numpy()
+        # print(points)
         pred_points = outputs_points.cpu().numpy()
         size_matrix = np.zeros_like(pred_points)
         size_matrix[:, 0] = img_h
         size_matrix[:, 1] = img_w
         pred_points = pred_points * size_matrix
         pred_points = pred_points.tolist()
-        dict_temp = {}
-        dict_temp['image_name'] = img_name
-        dict_temp['ann'] = pred_points
-        folder_path = json_path
-        file_to_open = os.path.join(folder_path, img_name) + '.json'
-        print(dict_temp)
-        with open(file_to_open, 'w') as f:
-            json_dict = json.dumps(dict_temp)
-            f.write(json_dict)
 
         # visualize predictions
         if vis_dir:
             points = [[point[0]*img_h, point[1]*img_w] for point in outputs_points]     # recover to actual points
             split_map = (outputs['split_map_raw'][0].detach().cpu().squeeze(0) > 0.5).float().numpy()
-            visualization(samples, targets, [points], vis_dir, split_map=split_map)
+            img_h, img_w = visualization(samples, targets, [points], vis_dir, split_map=split_map)
 
+        dict_temp = {}
+        dict_temp['version'] = "2.3.5"
+        dict_temp['flags'] = {}
+        dict_temp['shapes'] = []
+        dict_temp['imagePath'] = img_name + '.jpg'
+        dict_temp['imageData'] = None
+        dict_temp['imageHeight'] = img_h
+        dict_temp['imageWidth'] = img_w
+        for p in pred_points:
+            temp = {}
+            temp['label'] = "person"
+            temp['points'] = [[p[1],p[0]]]
+            temp['group_id'] = None
+            temp['description'] = ""
+            temp["difficult"] = False
+            temp['shape_type'] = "point"
+            temp['flags'] = {}
+            temp['attributes'] = {}
+            dict_temp['shapes'].append(temp)
+        folder_path = json_path
+        file_to_open = os.path.join(folder_path, img_name) + '.json'
+        print(dict_temp)
+        with open(file_to_open, 'w') as f:
+            json_dict = json.dumps(dict_temp, indent=2)
+            f.write(json_dict)

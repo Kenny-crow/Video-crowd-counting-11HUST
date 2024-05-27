@@ -1,5 +1,5 @@
 CUDA_VISIBLE_DEVICES='0' \
-python pred.py \
+python trans.py \
     --dataset_file="MyData" \
     --resume="resume/SHA_model.pth" \
-    --vis_dir="results"
+    --vis_dir=""
